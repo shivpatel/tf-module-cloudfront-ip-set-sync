@@ -4,12 +4,11 @@ const AWS = require('aws-sdk');
 const wafv2 = new AWS.WAFV2({ region: process.env.AWS_REGION });
 
 /**
- * Fetch CloudFront IP ranges from AWS public IP ranges JSON.
+ * Fetch IP ranges from the provided URL.
+ * @param {string} url - The URL to fetch the IP ranges from.
  * @returns {Promise<string[]>} A promise that resolves with an array of CloudFront IP ranges.
  */
-const getCloudFrontIpRanges = () => {
-  const url = 'https://ip-ranges.amazonaws.com/ip-ranges.json';
-  
+const getIpRangesFromUrl = (url) => {
   return new Promise((resolve, reject) => {
     https.get(url, (res) => {
       let data = '';
@@ -30,7 +29,7 @@ const getCloudFrontIpRanges = () => {
         }
       });
     }).on('error', error => {
-      reject(`Error fetching IP ranges JSON: ${error.message}`);
+      reject(`Error fetching IP ranges JSON from ${url}: ${error.message}`);
     });
   });
 };
@@ -79,10 +78,23 @@ exports.handler = async (event, context) => {
   
   const wafIpSetId = process.env.WAF_IP_SET_ID;
   const wafIpSetName = process.env.WAF_IP_SET_NAME;
-  
+
+  // Extract the URL from the SNS message
+  const snsMessage = event.Records[0].Sns.Message;
+  const parsedMessage = JSON.parse(snsMessage);
+  const ipRangesUrl = parsedMessage.url;
+
+  if (!ipRangesUrl) {
+    console.error('No URL found in the SNS event message');
+    return {
+      statusCode: 400,
+      body: JSON.stringify('Invalid event: URL not provided')
+    };
+  }
+
   try {
-    // Fetch CloudFront IP ranges
-    const cloudFrontRanges = await getCloudFrontIpRanges();
+    // Fetch CloudFront IP ranges using the provided URL
+    const cloudFrontRanges = await getIpRangesFromUrl(ipRangesUrl);
     console.log('Fetched CloudFront IP ranges:', cloudFrontRanges);
     
     // Update WAF IP set with CloudFront IP ranges
